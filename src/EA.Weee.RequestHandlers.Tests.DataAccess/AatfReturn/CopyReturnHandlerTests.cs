@@ -112,7 +112,7 @@
         [Fact]
         public async Task HandleAsync_ReturnCopied_CopiedReturnShouldBeAddedToContext()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 copiedReturn.Should().NotBeNull();
                 copiedReturn.SubmittedById.Should().BeNull();
@@ -124,13 +124,13 @@
                 copiedReturn.ParentId.Should().Be(@return.Id);
             }
 
-            await ActionAndAssert(Action);
+            await ArrangeActAndCallAssertions(Assertion);
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnReportsOn_CopiedReturnShouldHaveSameValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedReportsOn = database.WeeeContext.ReturnReportOns.Where(r => r.ReturnId == copiedReturn.Id).ToList();
 
@@ -142,13 +142,13 @@
                 copiedReportsOn.Select(r => r.ReportOnQuestionId).ToList().Should().Contain(originalReports.Select(r => r.ReportOnQuestionId).ToList());
             }
 
-            await ActionAndAssert(Action);
+            await ArrangeActAndCallAssertions(Assertion);
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnNonObligated_CopiedReturnShouldHaveSameValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedNonObligated = database.WeeeContext.NonObligatedWeee.Where(r => r.ReturnId == copiedReturn.Id).ToList();
 
@@ -166,13 +166,63 @@
                 }
             }
 
-            await ActionAndAssert(Action);
+            await ArrangeActAndCallAssertions(Assertion);
+        }
+
+        [Fact]
+        public async Task HandleAsync_GivenReturnNonObligatedWithDuplicatedCategory_CopiedReturnShouldHaveDistinctCategoryWithSameValues()
+        {
+            // Create non-obligated WEEE list with duplicate entries
+            nonObligatedWeeeCreator = (p) => new List<NonObligatedWeee>()
+            {
+                new NonObligatedWeee(@return, 1, true, 20),
+                new NonObligatedWeee(@return, 2, false, 30),
+                new NonObligatedWeee(@return, 1, true, 20),
+                new NonObligatedWeee(@return, 2, false, 30)
+            };
+
+            void Assertion(Guid id)
+            {
+                var nonObligatedExpectedList = new List<NonObligatedWeee>()
+                {
+                    new NonObligatedWeee(@return, 1, true, 20),
+                    new NonObligatedWeee(@return, 2, false, 30)
+                };
+
+                var copiedNonObligated = database.WeeeContext.NonObligatedWeee.Where(r => r.ReturnId == copiedReturn.Id).ToList();
+
+                var originalNonObligated = database.WeeeContext.NonObligatedWeee.Where(r => r.ReturnId == @return.Id).ToList();
+
+                // Assert that the original non-obligated WEEE entries still exist (by comparing with a newly created set)
+                originalNonObligated.Count().Should().Be(nonObligatedWeeeCreator(this).Count());
+
+                // Assert that there are the expected number of non-obligated WEEE records
+                copiedNonObligated.Count().Should().Be(nonObligatedExpectedList.Count());
+
+                // Assert that they are all new objects, none of them are the original objects
+                copiedNonObligated
+                    .Except(originalNonObligated)
+                    .Count()
+                    .Should()
+                    .Be(copiedNonObligated.Count());
+
+                // Assert that the values in the copied entries match the expected
+                copiedNonObligated
+                    .All(actual => nonObligatedExpectedList
+                        .Any(expected => expected.CategoryId == actual.CategoryId
+                        && expected.Dcf == actual.Dcf
+                        && expected.Tonnage == actual.Tonnage))
+                    .Should()
+                    .BeTrue();
+            }
+
+            await ArrangeActAndCallAssertions(Assertion);
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnWeeeReceived_CopiedReturnShouldHaveSameValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedWeeeReceived = database.WeeeContext.WeeeReceived.Where(r => r.ReturnId == copiedReturn.Id).Include(w => w.WeeeReceivedAmounts).ToList();
 
@@ -204,13 +254,13 @@
                 }
             }
 
-            await ActionAndAssert(Action);
+            await ArrangeActAndCallAssertions(Assertion);
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnWeeeReceivedWithAatfApprovalDateOnWindowDate_CopiedReturnShouldNotContainWeeeReceivedValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedWeeeReceived = database.WeeeContext.WeeeReceived.Where(r => r.ReturnId == copiedReturn.Id)
                     .Include(w => w.WeeeReceivedAmounts).ToList();
@@ -224,13 +274,13 @@
 
             var date = DateTime.Now;
 
-            await ActionAndAssertApprovalDate(Action, date, date);
+            await ActionAndAssertApprovalDate(Assertion, date, date);
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnWeeeReceivedWithAatfApprovalDateAfterWindowDate_CopiedReturnShouldNotContainWeeeReceivedValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedWeeeReceived = database.WeeeContext.WeeeReceived.Where(r => r.ReturnId == copiedReturn.Id)
                     .Include(w => w.WeeeReceivedAmounts).ToList();
@@ -244,13 +294,13 @@
 
             var date = DateTime.Now;
 
-            await ActionAndAssertApprovalDate(Action, date, date.AddDays(-1));
+            await ActionAndAssertApprovalDate(Assertion, date, date.AddDays(-1));
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnWeeeReceivedWithAatfApprovalDateIsNull_CopiedReturnShouldNotContainWeeeReceivedValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedWeeeReceived = database.WeeeContext.WeeeReceived.Where(r => r.ReturnId == copiedReturn.Id)
                     .Include(w => w.WeeeReceivedAmounts).ToList();
@@ -262,13 +312,13 @@
                 originalWeeeReceived.Should().HaveCountGreaterThan(0);
             }
 
-            await ActionAndAssertApprovalDate(Action, null, DateTime.Now);
+            await ActionAndAssertApprovalDate(Assertion, null, DateTime.Now);
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnWeeeSentOnWithAatfApprovalDateOnWindowDate_CopiedReturnShouldNotContainWeeeSentOnValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedWeeeSentOn = database.WeeeContext.WeeeSentOn.Where(r => r.ReturnId == copiedReturn.Id)
                     .Include(w => w.WeeeSentOnAmounts).ToList();
@@ -282,13 +332,13 @@
 
             var date = DateTime.Now;
 
-            await ActionAndAssertApprovalDate(Action, date, date);
+            await ActionAndAssertApprovalDate(Assertion, date, date);
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnWeeeSentOnWithAatfApprovalDateAfterWindowDate_CopiedReturnShouldNotContainWeeeSentOnValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedWeeeSentOn = database.WeeeContext.WeeeSentOn.Where(r => r.ReturnId == copiedReturn.Id)
                     .Include(w => w.WeeeSentOnAmounts).ToList();
@@ -302,13 +352,13 @@
 
             var date = DateTime.Now;
 
-            await ActionAndAssertApprovalDate(Action, date, date.AddDays(-1));
+            await ActionAndAssertApprovalDate(Assertion, date, date.AddDays(-1));
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnWeeeSentOnWithAatfApprovalDateIsNull_CopiedReturnShouldNotContainWeeeSentOnValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedWeeeSentOn = database.WeeeContext.WeeeSentOn.Where(r => r.ReturnId == copiedReturn.Id)
                     .Include(w => w.WeeeSentOnAmounts).ToList();
@@ -320,13 +370,13 @@
                 originalWeeeSentOn.Should().HaveCountGreaterThan(0);
             }
 
-            await ActionAndAssertApprovalDate(Action, null, DateTime.Now);
+            await ActionAndAssertApprovalDate(Assertion, null, DateTime.Now);
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnWeeeReusedWithAatfApprovalDateOnWindowDate_CopiedReturnShouldNotContainWeeeReusedValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedWeeeReused = database.WeeeContext.WeeeReused.Where(r => r.ReturnId == copiedReturn.Id)
                     .Include(w => w.WeeeReusedAmounts).ToList();
@@ -340,13 +390,13 @@
 
             var date = DateTime.Now;
 
-            await ActionAndAssertApprovalDate(Action, date, date);
+            await ActionAndAssertApprovalDate(Assertion, date, date);
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnWeeeReusedOnWithAatfApprovalDateAfterWindowDate_CopiedReturnShouldNotContainWeeeReusedValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedWeeeReused = database.WeeeContext.WeeeReused.Where(r => r.ReturnId == copiedReturn.Id)
                     .Include(w => w.WeeeReusedAmounts).ToList();
@@ -360,13 +410,13 @@
 
             var date = DateTime.Now;
 
-            await ActionAndAssertApprovalDate(Action, date, date.AddDays(-1));
+            await ActionAndAssertApprovalDate(Assertion, date, date.AddDays(-1));
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnWeeeReusedOnWithAatfApprovalDateIsNull_CopiedReturnShouldNotContainWeeeReusedValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedWeeeReused = database.WeeeContext.WeeeReused.Where(r => r.ReturnId == copiedReturn.Id)
                     .Include(w => w.WeeeReusedAmounts).ToList();
@@ -378,13 +428,13 @@
                 originalWeeeReused.Should().HaveCountGreaterThan(0);
             }
 
-            await ActionAndAssertApprovalDate(Action, null, DateTime.Now);
+            await ActionAndAssertApprovalDate(Assertion, null, DateTime.Now);
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnWeeeSentOn_CopiedReturnShouldHaveSameValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedWeeeSentOn = database.WeeeContext.WeeeSentOn.Where(r => r.ReturnId == copiedReturn.Id).Include(w => w.WeeeSentOnAmounts).ToList();
 
@@ -420,13 +470,13 @@
                 }
             }
 
-            await ActionAndAssert(Action);
+            await ArrangeActAndCallAssertions(Assertion);
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnWeeeReused_CopiedReturnShouldHaveSameValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedWeeeReused = database.WeeeContext.WeeeReused.Where(r => r.ReturnId == copiedReturn.Id)
                     .Include(w => w.WeeeReusedSites)
@@ -472,13 +522,13 @@
                     .NotContain(copiedWeeeReusedSites.Select(r => r.Address.Id).ToList());
             }
 
-            await ActionAndAssert(Action);
+            await ArrangeActAndCallAssertions(Assertion);
         }
 
         [Fact]
         public async Task HandleAsync_GivenReturnSchemes_CopiedReturnShouldHaveSameValues()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var copiedReturnScheme = database.WeeeContext.ReturnScheme.Where(r => r.ReturnId == copiedReturn.Id).ToList();
 
@@ -490,38 +540,39 @@
                 copiedReturnScheme.Select(r => r.SchemeId).ToList().Should().Contain(originalReturnScheme.Select(r => r.SchemeId).ToList());
             }
 
-            await ActionAndAssert(Action);
+            await ArrangeActAndCallAssertions(Assertion);
         }
 
         [Fact]
 
         public async Task HandleAsync_ReturnCopied_CopiedOrganisationShouldBeTheSameAsOriginal()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 copiedReturn.Organisation.Should().Be(@return.Organisation);
             }
 
-            await ActionAndAssert(Action);
+            await ArrangeActAndCallAssertions(Assertion);
         }
 
         [Fact]
         public async Task HandleAsync_ReturnFound_OriginalReturnShouldBeInContext()
         {
-            void Action(Guid id)
+            void Assertion(Guid id)
             {
                 var originalReturn = database.WeeeContext.Returns.First(r => r.Id == @return.Id);
 
                 originalReturn.Equals(@return).Should().BeTrue();
             }
 
-            await ActionAndAssert(Action);
+            await ArrangeActAndCallAssertions(Assertion);
         }
 
-        private async Task ActionAndAssert(Action<Guid> action)
+        private async Task ArrangeActAndCallAssertions(Action<Guid> assertions)
         {
             using (database = new DatabaseWrapper())
             {
+                // Arrange
                 var helper = new ModelHelper(database.Model);
                 var domainHelper = new DomainHelper(database.WeeeContext);
                 var userContext = A.Fake<IUserContext>();
@@ -539,16 +590,18 @@
                     userContext,
                     quarterWindowFactory);
 
+                // Act
                 var result = await handler.HandleAsync(message);
 
                 @return = database.WeeeContext.Returns.AsNoTracking().First(r => r.Id == message.ReturnId);
                 copiedReturn = database.WeeeContext.Returns.First(r => r.Id == result);
 
-                action(result);
+                // Assert
+                assertions(result);
             }
         }
 
-        private async Task ActionAndAssertApprovalDate(Action<Guid> action, DateTime? approvalDate, DateTime windowStartDate)
+        private async Task ActionAndAssertApprovalDate(Action<Guid> assertion, DateTime? approvalDate, DateTime windowStartDate)
         {
             using (database = new DatabaseWrapper())
             {
@@ -576,7 +629,7 @@
                 @return = database.WeeeContext.Returns.AsNoTracking().First(r => r.Id == message.ReturnId);
                 copiedReturn = database.WeeeContext.Returns.First(r => r.Id == result);
 
-                action(result);
+                assertion(result);
             }
         }
 
@@ -685,13 +738,15 @@
             await database.WeeeContext.SaveChangesAsync();
         }
 
+        private Func<CopyReturnHandlerTests, List<NonObligatedWeee>> nonObligatedWeeeCreator = (t) => new List<NonObligatedWeee>()
+            {
+                new NonObligatedWeee(t.@return, 1, true, 20),
+                new NonObligatedWeee(t.@return, 2, false, 30)
+            };
+
         private async Task AddNonObligated()
         {
-            var nonObligated = new List<NonObligatedWeee>()
-            {
-                new NonObligatedWeee(@return, 1, true, 20),
-                new NonObligatedWeee(@return, 2, false, 30)
-            };
+            var nonObligated = nonObligatedWeeeCreator(this);
 
             database.WeeeContext.NonObligatedWeee.AddRange(nonObligated);
 

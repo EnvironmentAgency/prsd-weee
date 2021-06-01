@@ -1,11 +1,11 @@
 ﻿namespace EA.Weee.RequestHandlers.AatfReturn.NonObligated
 {
+    using System.Linq;
+    using System.Threading.Tasks;
     using Domain.AatfReturn;
     using Prsd.Core.Mediator;
     using Requests.AatfReturn.NonObligated;
     using Security;
-    using System.Collections.Generic;
-    using System.Threading.Tasks;
 
     internal class AddNonObligatedHandler : IRequestHandler<AddNonObligated, bool>
     {
@@ -28,14 +28,20 @@
 
             var aatfReturn = await returnDataAccess.GetById(message.ReturnId);
 
-            var nonObligatedWee = new List<NonObligatedWeee>();
+            // Check that the data we are adding does not have any duplicate categories in
+            var filtered = message.CategoryValues.GroupBy(n => n.CategoryId).Select(g => g.FirstOrDefault()).Where(n => n != null);
 
-            foreach (var categoryValue in message.CategoryValues)
+            // Ensure we are not adding additional non-obligated WEEE
+            var existing = await nonObligatedDataAccess.FetchNonObligatedWeeeForReturn(message.ReturnId);
+
+            filtered = filtered.Where(n => !existing.Any(e => e.CategoryId == n.CategoryId));
+
+            var nonObligatedWee = filtered.Select(n => new NonObligatedWeee(aatfReturn, n.CategoryId, message.Dcf, n.Tonnage));
+
+            if (nonObligatedWee.Count() > 0)
             {
-                nonObligatedWee.Add(new NonObligatedWeee(aatfReturn, categoryValue.CategoryId, message.Dcf, categoryValue.Tonnage));
+                await nonObligatedDataAccess.Submit(nonObligatedWee);
             }
-
-            await nonObligatedDataAccess.Submit(nonObligatedWee);
 
             return true;
         }
